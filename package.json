@@ -1,0 +1,14 @@
+{
+  "name": "audit-logging",
+  "version": "1.0.0",
+  "description": "A collection of services that represent an MVP of an audit-logging system",
+  "main": "dist/index.js",
+  "scripts": {
+    "test": "scripts/test.sh"
+  },
+  "author": "Kael Shipman <kael.shipman@gmail.com>",
+  "license": "ISC",
+  "dependencies": {
+    "lerna": "^3.15.0"
+  }
+}
