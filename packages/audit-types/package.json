@@ -1,0 +1,11 @@
+{
+  "name": "audit-types",
+  "version": "1.0.0",
+  "description": "Types for the audit logging system",
+  "main": "dist/index.js",
+  "scripts": {
+    "test": "scripts/test.sh"
+  },
+  "author": "Kael Shipman <kael.shipman@gmail.com>",
+  "license": "ISC"
+}
