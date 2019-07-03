@@ -1,2 +1,4 @@
 node_modules
 *.sw[op]
+dist
+build
