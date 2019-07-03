@@ -13,6 +13,7 @@
     "mysql": "^2.17.1"
   },
   "devDependencies": {
+    "audit-types": "^1.0.0",
     "@types/mysql": "^2.15.6",
     "typescript": "^3.5.2"
   }
