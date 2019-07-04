@@ -8,12 +8,12 @@ import {
   TimelessDataEvent,
   DataEvent,
   IncomingJsonApiDoc,
-  Db,
-  UserAttributes,
+  OutgoingJsonApiDocWithoutErrors,
+  JsonApiData,
 } from "audit-types";
 
 /**
- * 1. curl http://localhost:3000/token
+ * 1. curl http://localhost:3000/token/1
  *    -> Returns a JWT with 20-min expiry
  * 2. curl -H "Authentication: Bearer $TOKEN" http://localhost:3000/api/users/1
  * 3. curl -H "Content-Type: application/json" -H "Authentication: Bearer $TOKEN" -X PATCH -d '{"data":{"id":1,"type":"users","attributes":{"name":"Kael Shipman","agreedTos":1}}}' http://localhost:3000/api/users/1
@@ -25,6 +25,32 @@ import {
  * 6. curl http://localhost:3000/logs/for/users/2
  *    -> Returns all actions done to user 2
  */
+
+
+export interface UserAttributes {
+  name: string;
+  email: string;
+  agreedTos: boolean;
+}
+
+export interface NoteAttributes {
+  timestamp: number;
+  targetType: string;
+  targetId: number;
+  fieldName: string|null;
+  data: string;
+  creatorId: number;
+}
+
+export namespace Db {
+  export interface User extends UserAttributes {
+    id: number;
+  }
+
+  export interface Note extends NoteAttributes {
+    id: number;
+  }
+}
 
 
 
@@ -127,6 +153,10 @@ const returnError = function(
 }
 
 
+
+
+// Allow people to get access tokens
+
 app.get("/token/:id", async (req, res, next) => {
   if (!req.params.id) {
     return returnError(
@@ -163,6 +193,13 @@ app.get("/token/:id", async (req, res, next) => {
     .send(token);
 });
 
+
+
+
+
+
+// Require access tokens for all further requests
+
 app.use((req, res, next) => {
   const authHeader = req.get("Authentication");
   if (!authHeader) {
@@ -197,7 +234,62 @@ app.use((req, res, next) => {
   }
 });
 
+
+// Parse json bodies
 app.use(express.json());
+
+
+
+
+
+
+
+
+
+// General endpoints
+
+app.delete("/api/:type/:id", async (req, res, next) => {
+  const whitelist = [ "users", "notes" ];
+  if (whitelist.indexOf(req.params.type) === -1) {
+    return returnError(
+      res,
+      400,
+      "Unrecognized Type",
+      `You passed ${req.params.type}, but the acceptable types are '${whitelist.join("', '")}'`
+    );
+  }
+
+  try {
+    const result = await query<{affectedRows: number;}>(
+      "DELETE FROM `"+req.params.type+"` WHERE `id` = ?",
+      [ req.params.id ]
+    );
+
+    if (result.affectedRows > 0) {
+      emit({
+        action: "deleted",
+        actorType: "users",
+        actorId: req.app.locals.user.id,
+        targetType: req.params.type,
+        targetId: req.params.id,
+      });
+    }
+
+    res.status(200).send();
+  } catch (e) {
+    console.error(e);
+    return returnError(res, 500, "Internal Service Error", "Sorry, something went wrong");
+  }
+});
+
+
+
+
+
+
+
+
+// User endpoints
 
 app.get("/api/users/:id", async (req, res, next) => {
   const users = await query<Array<Db.User>>("SELECT * FROM `users` WHERE `id` = ?", [ req.params.id ]);
@@ -361,29 +453,164 @@ app.patch("/api/users/:id", async (req, res, next) => {
   }
 });
 
-app.delete("/api/users/:id", async (req, res, next) => {
+
+
+
+
+
+
+// Notes endpoints
+
+app.post("/api/notes", async (req, res, next) => {
+  if (!validateBody(res, req.body)) {
+    return;
+  }
+
+  const noteData = <NoteAttributes>req.body.data.attributes;
+
+  // validate here (later)
+
   try {
-    const result = await query<{affectedRows: number;}>(
-      "DELETE FROM `users` WHERE `id` = ?",
-      [ req.params.id ]
+    const result = await query<{insertId: number;}>(
+      "INSERT INTO `notes` VALUES (NULL, ?, ?, ?, ?, ?, ?)",
+      [
+        Date.now(),
+        noteData.targetType,
+        noteData.targetId,
+        noteData.fieldName,
+        noteData.data,
+        req.app.locals.user.id,
+      ]
     );
 
-    if (result.affectedRows > 0) {
-      emit({
-        action: "deleted",
-        actorType: "users",
-        actorId: req.app.locals.user.id,
-        targetType: "users",
-        targetId: req.params.id,
-      });
-    }
+    emit({
+      action: "created",
+      actorType: "users",
+      actorId: req.app.locals.user.id,
+      targetType: "notes",
+      targetId: result.insertId,
+    });
 
-    res.status(200).send();
+    const doc = {
+      data: {
+        id: result.insertId,
+        type: "notes",
+        attributes: Object.assign({}, noteData)
+      }
+    };
+
+    res
+    .set("Content-Type", "application/vnd.api+json")
+    .status(201)
+    .send(JSON.stringify(doc));
   } catch (e) {
     console.error(e);
     return returnError(res, 500, "Internal Service Error", "Sorry, something went wrong");
   }
 });
 
-app.listen(3000);
+
+app.get([ "/api/notes", "/api/notes/:id" ], async (req, res, next) => {
+  let where: string;
+  let params: Array<string|number|null> = [];
+
+  if (req.params.id) {
+    if (req.query.target) {
+      return returnError(
+        res,
+        400,
+        "Too Many Parameters",
+        `Looks like you've passed both id and target parameters. ` +
+        `You pass one or the other, but not both`
+      );
+    }
+
+    where = "`id` = ?";
+    params.push(req.params.id);
+  } else {
+    if (!req.query.target) {
+      return returnError(
+        res,
+        400,
+        "Not Enough Parameters",
+        "You must pass either a note id via the url or a 'target' query " +
+        "parameter (e.g., `target=users:1`). You passed neither."
+      );
+    }
+
+    const target = req.query.target.split(":");
+    if (target.length < 2 || target.length > 3) {
+      return returnError(
+        res,
+        400,
+        "Invalid Value for 'target'",
+        `The 'target' parameter must be of the form 'type:id(:field)'. You passed ${req.query.target}`
+      );
+    }
+
+    where = "`targetType` = ? && `targetId` = ?";
+    params.push(target[0]);
+    params.push(target[1]);
+
+    if (params.length === 3) {
+      where += " && `fieldName` = ?";
+      params.push(target[2]);
+    }
+  }
+
+  try {
+    const notes = await query<Array<Db.Note>>("SELECT * FROM `notes` WHERE " + where, params);
+    if (notes.length === 0) {
+      return returnError(res, 404, "No Notes Found", "Couldn't find notes matching your search parameters.");
+    }
+
+    const doc: OutgoingJsonApiDocWithoutErrors = {
+      data: []
+    }
+
+    for (let i = 0; i < notes.length; i++) {
+      emit({
+        action: "viewed",
+        actorType: "users",
+        actorId: req.app.locals.user.id,
+        targetType: "notes",
+        targetId: notes[i].id,
+      });
+
+      const attrs = Object.assign({}, notes[i]);
+      delete attrs.id;
+      (doc.data as Array<JsonApiData>).push({
+        id: notes[i].id,
+        type: "notes",
+        attributes: attrs
+      });
+    }
+
+    res
+    .set("Content-Type", "application/vnd.api+json")
+    .status(200)
+    .send(JSON.stringify(doc));
+  } catch (e) {
+    console.error(e);
+    return returnError(
+      res,
+      500,
+      "Internal Server Error",
+      "Sorry, something went wrong while processing your request."
+    );
+  }
+});
+
+
+
+
+
+
+
+
+
+
+const port=3000;
+app.listen(port);
+console.log(`Listening on ${port}`);
 

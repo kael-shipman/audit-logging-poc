@@ -26,18 +26,6 @@ export interface JsonApiDocWithErrors {
 
 export type JsonApiDoc = JsonApiDocWithErrors|OutgoingJsonApiDocWithoutErrors|IncomingJsonApiDoc;
 
-export interface UserAttributes {
-  name: string;
-  email: string;
-  agreedTos: boolean;
-}
-
-export namespace Db {
-  export interface User extends UserAttributes {
-    id: number;
-  }
-}
-
 export interface TimelessViewEvent {
   action: "viewed";
   timestamp?: number;
