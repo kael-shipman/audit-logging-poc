@@ -1,5 +1,5 @@
 {
-  "name": "website",
+  "name": "api",
   "version": "1.0.0",
   "description": "A minimal permissioned API for MVPing audit logging",
   "main": "dist/index.js",
