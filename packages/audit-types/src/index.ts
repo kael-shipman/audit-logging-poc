@@ -11,20 +11,24 @@ export interface JsonApiError {
   status: number;
 }
 
-export interface IncomingJsonApiDoc {
+export interface JsonApiRequestDoc {
   data: JsonApiData;
 }
 
-export interface OutgoingJsonApiDocWithoutErrors {
+export interface JsonApiResponseDocWithoutErrors {
   data: JsonApiData|Array<JsonApiData>,
   included?: Array<unknown>;
 }
 
-export interface JsonApiDocWithErrors {
+export interface JsonApiResponseDocWithErrors {
   errors: Array<JsonApiError>;
 }
 
-export type JsonApiDoc = JsonApiDocWithErrors|OutgoingJsonApiDocWithoutErrors|IncomingJsonApiDoc;
+export type JsonApiResponseDoc = JsonApiResponseDocWithErrors|JsonApiResponseDocWithoutErrors;
+
+export const isWithoutErrors = function(doc: any): doc is JsonApiResponseDocWithoutErrors {
+  return typeof doc.data !== "undefined" && typeof doc.errors === "undefined";
+}
 
 export interface TimelessViewEvent {
   action: "viewed";
