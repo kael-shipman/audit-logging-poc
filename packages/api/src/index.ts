@@ -7,19 +7,19 @@ import {
   TimelessChangeEvent,
   TimelessDataEvent,
   DataEvent,
-  IncomingJsonApiDoc,
-  OutgoingJsonApiDocWithoutErrors,
+  JsonApiRequestDoc,
+  JsonApiResponseDocWithoutErrors,
   JsonApiData,
 } from "audit-types";
 
 /**
  * 1. curl http://localhost:3000/token/1
  *    -> Returns a JWT with 20-min expiry
- * 2. curl -H "Authentication: Bearer $TOKEN" http://localhost:3000/api/users/1
- * 3. curl -H "Content-Type: application/json" -H "Authentication: Bearer $TOKEN" -X PATCH -d '{"data":{"id":1,"type":"users","attributes":{"name":"Kael Shipman","agreedTos":1}}}' http://localhost:3000/api/users/1
- * 4. curl -H "Content-Type: application/json" -H "Authentication: Bearer $TOKEN" -d '{"data":{"type":"users","attributes":{"name":"Ray Charles","agreedTos":0,"email":"ray.charles@openfinance.io"}}}' http://localhost:3000/api/users
- * 5. curl -H "Content-Type: application/json" -H "Authentication: Bearer $TOKEN" -X PATCH -d '{"data":{"id":2,"type":"users","attributes":{"agreedTos":1}}}' http://localhost:3000/api/users/2
- * 6. curl -H "Authentication: Bearer $TOKEN" -X DELETE http://localhost:3000/api/users/2
+ * 2. curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/api/users/1
+ * 3. curl -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" -X PATCH -d '{"data":{"id":1,"type":"users","attributes":{"name":"Kael Shipman","agreedTos":1}}}' http://localhost:3000/api/users/1
+ * 4. curl -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" -d '{"data":{"type":"users","attributes":{"name":"Ray Charles","agreedTos":0,"email":"ray.charles@openfinance.io"}}}' http://localhost:3000/api/users
+ * 5. curl -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" -X PATCH -d '{"data":{"id":2,"type":"users","attributes":{"agreedTos":1}}}' http://localhost:3000/api/users/2
+ * 6. curl -H "Authorization: Bearer $TOKEN" -X DELETE http://localhost:3000/api/users/2
  * 7. curl http://localhost:3000/logs/by/users/1
  *    -> Returns all actions that user 1 has done
  * 6. curl http://localhost:3000/logs/for/users/2
@@ -49,6 +49,17 @@ export namespace Db {
 
   export interface Note extends NoteAttributes {
     id: number;
+  }
+}
+
+export namespace Api {
+  export interface User extends JsonApiData {
+    type: "users";
+    attributes: UserAttributes;
+  }
+  export interface Note extends JsonApiData {
+    type: "notes";
+    attribute: NoteAttributes;
   }
 }
 
@@ -128,11 +139,11 @@ const diffData = function<A>(existing: A, incoming: Partial<A>): Partial<A> {
   return diff;
 }
 
-const isJsonApiDoc = function(envelop: any): envelop is IncomingJsonApiDoc {
+const isJsonApiDoc = function(envelop: any): envelop is JsonApiRequestDoc {
   return envelop.data && envelop.data.type;
 }
 
-const validateBody = function(res: express.Response, body: any): body is IncomingJsonApiDoc {
+const validateBody = function(res: express.Response, body: any): body is JsonApiRequestDoc {
   if (!isJsonApiDoc(body)) {
     returnError(res, 400, "Invalid Body", "Body must be a JSON:API document");
     return false;
@@ -141,23 +152,50 @@ const validateBody = function(res: express.Response, body: any): body is Incomin
   }
 }
 
+const toJsonApi = function<T extends JsonApiData>(attrs: any, type: string): T {
+  const obj: JsonApiData = {
+    id: attrs.id,
+    type,
+    attributes: attrs
+  }
+  if (obj.attributes) {
+    delete (obj.attributes as any).id;
+  }
+  return obj as T;
+}
+
 const returnError = function(
   res: express.Response,
   status: number,
   title: string,
   detail: string
 ) {
-  return res.status(status).send(JSON.stringify({
+  return res
+  .set("Access-Control-Allow-Origin", "*")
+  .status(status)
+  .send(JSON.stringify({
     errors: [ { title, detail } ]
   }));
 }
 
 
 
+// Allow all CORS requests
+
+app.options("*", (req, res, next) => {
+  res
+  .set("Access-Control-Allow-Origin", "*")
+  .set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+  .set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+  .send();
+});
+
+
+
 
 // Allow people to get access tokens
 
-app.get("/token/:id", async (req, res, next) => {
+app.get("/tokens/:id", async (req, res, next) => {
   if (!req.params.id) {
     return returnError(
       res,
@@ -189,6 +227,7 @@ app.get("/token/:id", async (req, res, next) => {
 
   res
     .set("Content-Type", "text/plain")
+    .set("Access-Control-Allow-Origin", "*")
     .status(201)
     .send(token);
 });
@@ -201,10 +240,10 @@ app.get("/token/:id", async (req, res, next) => {
 // Require access tokens for all further requests
 
 app.use((req, res, next) => {
-  const authHeader = req.get("Authentication");
+  const authHeader = req.get("Authorization");
   if (!authHeader) {
     return returnError(res, 403, "Missing Auth Header",
-      "Please supply a valid 'Athentication' header with Bearer token."
+      "Please supply a valid 'Authorization' header with Bearer token."
     );
   }
 
@@ -220,7 +259,7 @@ app.use((req, res, next) => {
 
   if (!token) {
     return returnError(res, 403, "Auth Header Invalid",
-      "Please supply a valid 'Athentication' header with Bearer token."
+      "Please supply a valid 'Authorization' header with Bearer token."
     );
   }
 
@@ -236,7 +275,9 @@ app.use((req, res, next) => {
 
 
 // Parse json bodies
-app.use(express.json());
+app.use(express.json({
+  type: [ "application/json", "application/vnd.api+json" ]
+}));
 
 
 
@@ -275,7 +316,10 @@ app.delete("/api/:type/:id", async (req, res, next) => {
       });
     }
 
-    res.status(200).send();
+    res
+    .status(200)
+    .set("Access-Control-Allow-Origin", "*")
+    .send();
   } catch (e) {
     console.error(e);
     return returnError(res, 500, "Internal Service Error", "Sorry, something went wrong");
@@ -291,32 +335,35 @@ app.delete("/api/:type/:id", async (req, res, next) => {
 
 // User endpoints
 
-app.get("/api/users/:id", async (req, res, next) => {
-  const users = await query<Array<Db.User>>("SELECT * FROM `users` WHERE `id` = ?", [ req.params.id ]);
-  if (users.length === 0) {
-    return returnError(res, 404, "Invalid ID", "The User ID you passed is not valid");
+app.get(["/api/users", "/api/users/:id"], async (req, res, next) => {
+  let users: Array<Db.User>;
+  if (req.params.id) {
+    users = await query<Array<Db.User>>("SELECT * FROM `users` WHERE `id` = ?", [ req.params.id ]);
+    if (users.length === 0) {
+      return returnError(res, 404, "Invalid ID", "The User ID you passed is not valid");
+    }
+  } else {
+    users = await query<Array<Db.User>>("SELECT * FROM `users`");
   }
 
-  const user = users[0];
+  const userObjects: Array<Api.User> = [];
+  for (let i = 0; i < users.length; i++) {
+    emit({
+      action: "viewed",
+      actorType: "users",
+      actorId: req.app.locals.user.id,
+      targetType: "users",
+      targetId: users[i].id,
+    });
+    userObjects.push(toJsonApi<Api.User>(Object.assign({}, users[i]), "users"));
+  }
 
-  emit({
-    action: "viewed",
-    actorType: "users",
-    actorId: req.app.locals.user.id,
-    targetType: "users",
-    targetId: user.id,
-  });
-
-  const doc = {
-    data: {
-      id: user.id,
-      type: "users",
-      attributes: Object.assign({}, user)
-    }
+  const doc: JsonApiResponseDocWithoutErrors = {
+    data: req.params.id ? userObjects[0] : userObjects
   };
-  delete doc.data.attributes.id;
 
   res
+  .set("Access-Control-Allow-Origin", "*")
   .set("Content-Type", "application/vnd.api+json")
   .status(200)
   .send(JSON.stringify(doc));
@@ -358,6 +405,7 @@ app.post("/api/users", async (req, res, next) => {
     };
 
     res
+    .set("Access-Control-Allow-Origin", "*")
     .set("Content-Type", "application/vnd.api+json")
     .status(201)
     .send(JSON.stringify(doc));
@@ -439,6 +487,7 @@ app.patch("/api/users/:id", async (req, res, next) => {
     delete doc.data.attributes.id;
 
     res
+    .set("Access-Control-Allow-Origin", "*")
     .set("Content-Type", "application/vnd.api+json")
     .status(200)
     .send(JSON.stringify(doc));
@@ -500,6 +549,7 @@ app.post("/api/notes", async (req, res, next) => {
     };
 
     res
+    .set("Access-Control-Allow-Origin", "*")
     .set("Content-Type", "application/vnd.api+json")
     .status(201)
     .send(JSON.stringify(doc));
@@ -564,10 +614,7 @@ app.get([ "/api/notes", "/api/notes/:id" ], async (req, res, next) => {
       return returnError(res, 404, "No Notes Found", "Couldn't find notes matching your search parameters.");
     }
 
-    const doc: OutgoingJsonApiDocWithoutErrors = {
-      data: []
-    }
-
+    const notesObjects: Array<Api.Note> = [];
     for (let i = 0; i < notes.length; i++) {
       emit({
         action: "viewed",
@@ -576,17 +623,15 @@ app.get([ "/api/notes", "/api/notes/:id" ], async (req, res, next) => {
         targetType: "notes",
         targetId: notes[i].id,
       });
-
-      const attrs = Object.assign({}, notes[i]);
-      delete attrs.id;
-      (doc.data as Array<JsonApiData>).push({
-        id: notes[i].id,
-        type: "notes",
-        attributes: attrs
-      });
+      notesObjects.push(toJsonApi<Api.Note>(Object.assign({}, notes[i]), "notes"));
     }
 
+    let doc: JsonApiResponseDocWithoutErrors = {
+      data: req.params.id ? notesObjects[0] : notesObjects
+    };
+
     res
+    .set("Access-Control-Allow-Origin", "*")
     .set("Content-Type", "application/vnd.api+json")
     .status(200)
     .send(JSON.stringify(doc));

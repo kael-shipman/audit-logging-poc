@@ -89,4 +89,5 @@ amqpCnx.then((ch: amqp.Channel) => {
 });
 
 
+console.log("Listening for events");
 
