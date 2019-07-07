@@ -3,6 +3,7 @@ import {
   JsonApiResponseDocWithoutErrors,
   JsonApiResponseDocWithErrors,
   JsonApiError,
+  Api as EventsApi,
 } from "audit-types";
 
 class JsonApiResponseError extends Error {
@@ -125,9 +126,9 @@ const getUsers = async function(token: string): Promise<Array<Api.User>> {
 
 const buildUsersTable = function(users: Array<Api.User>, container: HTMLElement) {
   // Reset content
-  container.innerHTML = '<div class="header col1">id</div>' +
-    '<div class="header col2">name</div><div class="header col3">email</div>' +
-    '<div class="header col4">TOS</div><div class="header col5">action</div>';
+  container.innerHTML = '<div class="header cell1">id</div>' +
+    '<div class="header cell2">name</div><div class="header cell3">email</div>' +
+    '<div class="header cell4">TOS</div><div class="header cell5">action</div>';
 
   // Add rows
   for (let i = 0; i < users.length; i++) {
@@ -153,10 +154,11 @@ const buildUserRow = function(user: Api.User): Array<HTMLElement> {
       `<button data-userId="${user.id}">save</button>` +
       `<button data-userId="${user.id}">delete</button>`
     ],
+    [ "log", "" ],
   ];
   for (let i = 0; i < spec.length; i++) {
     const el = document.createElement("div");
-    el.className = `col${i+1}`;
+    el.className = `cell${i+1}`;
     el.setAttribute("data-userId", String(user.id));
     el.id = `users:${user.id}-${spec[i][0]}`;
     el.innerHTML = spec[i][1];
@@ -184,6 +186,12 @@ const buildUserRow = function(user: Api.User): Array<HTMLElement> {
 
       el.removeChild(buttons[1]);
     }
+
+    new Promise(async (resolve, reject) => {
+      const history = await getObjectHistory("users", user.id);
+      showObjectHistory(user.id, history);
+      resolve();
+    });
 
     row.push(el);
   }
@@ -263,31 +271,58 @@ const saveUserRow = async function(userId: string) {
     data.email = input.value;
   }
 
+  const agreedTos = document.getElementById(`users:${userId}-agreedTos`);
+  if (agreedTos) {
+    const input = agreedTos.getElementsByTagName("input")![0];
+    data.agreedTos = (input as HTMLInputElement).checked;
+  }
+
   const edit = document.getElementById(`users:${userId}-control`);
   if (edit) {
     (edit as any).saveButton.disabled = true;
   }
 
   try {
-    await fetchWithToken<JsonApiResponseDocWithoutErrors>(`http://localhost:3000/api/users/${userId}`, {
-      method: "PATCH",
+    const body = {
+      data: <Partial<Api.User>>{
+        type: "users",
+        attributes: data
+      }
+    };
+    let url = `http://localhost:3000/api/users`;
+
+    // If we're saving an existing user....
+    if (userId != "-1") {
+      url += `/${userId}`;
+      body.data.id = userId;
+    }
+
+    const doc = await fetchWithToken<JsonApiResponseDocWithoutErrors>(url, {
+      method: userId == "-1" ? "POST" : "PATCH",
       headers: {
         "Content-Type": "application/vnd.api+json"
       },
-      body: JSON.stringify({
-        data: {
-          id: userId,
-          type: "users",
-          attributes: data
-        }
-      })
+      body: JSON.stringify(body)
     });
 
-    if (edit) {
+    if (edit && userId != "-1") {
       edit.appendChild((edit as any).editButton);
       edit.appendChild((edit as any).deleteButton);
       edit.removeChild((edit as any).saveButton);
       (edit as any).deleteButton.disabled = false;
+    }
+
+    if (userId == "-1") {
+      const container = document.getElementById("users-list")!;
+      const row = buildUserRow(doc!.data as Api.User);
+      for (let i = 0; i < row.length; i++) {
+        const oldChild = container.querySelector(`.cell${i+1}[data-userId='${userId}']`);
+        if (oldChild) {
+          container.replaceChild(row[i], oldChild);
+        } else {
+          console.error("Couldn't locate old child "+`.cell${i+1}[data-userId='${userId}']`);
+        }
+      }
     }
   } catch (e) {
     (edit as any).saveButton.disabled = false;
@@ -327,6 +362,78 @@ const deleteUserRow = async function(userId: string|number) {
   (edit as any).deleteButton.disabled = false;
 }
 
+const addUserRow = async function() {
+  const container = document.getElementById("users-list");
+  if (!container) {
+    alert("users-list not found!");
+  } else {
+    const row = buildUserRow({
+      type: "users",
+      id: -1,
+      attributes: {
+        name: "",
+        email: "",
+        agreedTos: false,
+      }
+    });
+    for (let j = 0; j < row.length; j++) {
+      container.appendChild(row[j]);
+    }
+    editUserRow("-1");
+  }
+}
+
+const getObjectHistory = async function(type: string, id: number|string): Promise<Array<EventsApi.DataEvent>> {
+  // Don't need to use token here, but this does some convenient things for us
+  const doc = await fetchWithToken<JsonApiResponseDocWithoutErrors>(
+    `http://localhost:3001/api/${type}/${id}/data-events`
+  );
+
+  if (!doc) {
+    throw new Error(`Couldn't get data events for ${type}:${id}`);
+  }
+
+  return <Array<EventsApi.DataEvent>>doc.data;
+}
+
+const showObjectHistory = function(userId: string|number, events: Array<EventsApi.DataEvent>) {
+  const container = document.getElementById(`users:${userId}-log`);
+  if (!container) {
+    throw new Error(`Couldn't find history container for user ${userId}`);
+  }
+
+  container.innerHTML = "";
+
+  const ul = document.createElement("ul");
+  for(let i = 0; i < events.length; i++) {
+    // Don't show instances of a user viewing himself
+    if (
+      events[i].attributes.action === "viewed" &&
+      events[i].attributes.actorId === events[i].attributes.targetId &&
+      events[i].attributes.targetType === "users"
+    ) {
+      continue;
+    }
+
+    const li = document.createElement("li");
+    li.innerHTML = formatDataEvent(events[i]);
+    ul.appendChild(li);
+  }
+
+  container.appendChild(ul);
+}
+
+const formatDataEvent = function(event: EventsApi.DataEvent): string {
+  const e = event.attributes;
+  const t = new Date(e.timestamp);
+  if (e.action === "changed") {
+    return `${t.toLocaleString()}: <strong>User ${e.actorId} ${e.action}</strong> field ` +
+    `${e.fieldName} from '${e.prevData}' to '${e.newData}'`;
+  } else {
+    return `${t.toLocaleString()}: <strong>User ${e.actorId} ${e.action}</strong> this user`;
+  }
+}
+
 
 
 
@@ -338,5 +445,12 @@ window.addEventListener("DOMContentLoaded", async function(ev) {
   token = await refreshToken(1);
   const users = getUsers(token);
   buildUsersTable(await users, document.getElementById("users-list")!);
+
+  const addUserButton = document.getElementById("add-user");
+  if (addUserButton) {
+    addUserButton.addEventListener("click", addUserRow);
+  } else {
+    alert("No button with id 'add-user'!");
+  }
 });
 

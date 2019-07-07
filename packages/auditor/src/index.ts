@@ -1,6 +1,11 @@
 import * as amqp from "amqplib";
-import { DataEvent } from "audit-types";
+import {
+  DataEventAttributes,
+  Db,
+  Api,
+} from "audit-types";
 import * as Mysql from "mysql";
+import * as express from "express";
 
 const mysql = Mysql.createConnection({
   host: "localhost",
@@ -12,7 +17,7 @@ const mysql = Mysql.createConnection({
 const query = function<A extends {}>(
   query: string,
   params?: Array<string|number|boolean|null>
-): Promise<A> {
+): Promise<Array<A>> {
   return new Promise((resolve, reject) => {
     mysql.query(query, params, (error, results, fields) => {
       if (error !== null) {
@@ -45,7 +50,7 @@ amqpCnx.then((ch: amqp.Channel) => {
       if (msg) {
         try {
           // Inflate the data event
-          const ev = <DataEvent>JSON.parse(msg.content.toString("utf8"));
+          const ev = <DataEventAttributes>JSON.parse(msg.content.toString("utf8"));
 
           // Fill in the common parameters
           let params: Array<string|number|boolean|null> = [
@@ -89,5 +94,54 @@ amqpCnx.then((ch: amqp.Channel) => {
 });
 
 
-console.log("Listening for events");
+
+
+
+
+
+
+
+// API
+
+const app = express();
+
+// Allow all CORS requests
+
+app.options("*", (req, res, next) => {
+  res
+  .set("Access-Control-Allow-Origin", "*")
+  .set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+  .set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+  .send();
+});
+
+
+app.get("/api/:targetType/:targetId/data-events", async (req, res, next) => {
+  const events = await query<Db.DataEvent>(
+    "SELECT * FROM `data-events` WHERE `targetType` = ? && `targetId` = ?",
+    [ req.params.targetType, req.params.targetId ]
+  );
+
+  const result: Array<Api.DataEvent> = [];
+  if (events && events.length > 0) {
+    for(let i = 0; i < events.length; i++) {
+      const id = events[i].id;
+      delete events[i].id;
+      result.push({
+        id,
+        type: "data-events",
+        attributes: events[i],
+      });
+    }
+  }
+
+  res
+  .set("Access-Control-Allow-Origin", "*")
+  .set("Content-Type", "application/vnd.api+json")
+  .status(200)
+  .send(JSON.stringify({ data: result }));
+});
+
+app.listen(3001);
+console.log("Listening on 3001");
 

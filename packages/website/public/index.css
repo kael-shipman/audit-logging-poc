@@ -4,7 +4,7 @@
   grid-template-rows: auto;
   grid-column-gap: 10px;
   grid-row-gap: 10px;
-  justify-items: center;
+  justify-items: stretch;
   align-items: center;
   max-width: 600px;
 }
@@ -13,23 +13,30 @@
   font-weight: bold;
 }
 
-#users-list .col1 {
+#users-list .cell1 {
   grid-column: 1;
 }
 
-#users-list .col2 {
+#users-list .cell2 {
   grid-column: 2;
 }
 
-#users-list .col3 {
+#users-list .cell3 {
   grid-column: 3;
 }
 
-#users-list .col4 {
+#users-list .cell4 {
   grid-column: 4;
 }
 
-#users-list .col5 {
+#users-list .cell5 {
   grid-column: 5;
 }
+
+#users-list .cell6 {
+  grid-column: 1/-1;
+  font-size: .8rem;
+  color: #999;
+}
+
 

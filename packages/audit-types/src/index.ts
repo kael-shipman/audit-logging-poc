@@ -73,8 +73,22 @@ export interface TimelessChangeEvent {
   eventName?: string; // A standard name for the event that can be used to map localized strings to describe the event
 }
 
-export type TimelessDataEvent = TimelessViewEvent|TimelessCreationEvent|TimelessDeletionEvent|TimelessChangeEvent;
+export type TimelessDataEventAttributes = TimelessViewEvent|TimelessCreationEvent|TimelessDeletionEvent|TimelessChangeEvent;
 
-export type DataEvent = TimelessDataEvent & {
+export type DataEventAttributes = TimelessDataEventAttributes & {
   timestamp: number;
+}
+
+export namespace Db {
+  export type DataEvent = DataEventAttributes & {
+    id: number;
+  }
+}
+
+export namespace Api {
+  export interface DataEvent {
+    id: number;
+    type: "data-events";
+    attributes: DataEventAttributes;
+  }
 }

@@ -10,11 +10,13 @@
   "license": "ISC",
   "dependencies": {
     "amqplib": "^0.5.3",
+    "express": "^4.17.1",
     "mysql": "^2.17.1"
   },
   "devDependencies": {
-    "audit-types": "^1.0.0",
     "@types/mysql": "^2.15.6",
+    "@types/express": "^4.17.0",
+    "audit-types": "^1.0.0",
     "typescript": "^3.5.2"
   }
 }
