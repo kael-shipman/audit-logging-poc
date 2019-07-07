@@ -4,7 +4,8 @@
   "description": "A minimal permissioned API for MVPing audit logging",
   "main": "dist/index.js",
   "scripts": {
-    "test": "scripts/test.sh"
+    "test": "scripts/test.sh",
+    "build": "tsc"
   },
   "author": "Kael Shipman <kael.shipman@gmail.com>",
   "license": "ISC",

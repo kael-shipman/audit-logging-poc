@@ -7,7 +7,7 @@
     "test": "scripts/test.sh",
     "build-app": "tsc && webpack",
     "build-srv": "tsc && webpack --config webpack-srv.config.js",
-    "build-all": "tsc && webpack --config webpack.config.js && webpack --config webpack-srv.config.js"
+    "build": "tsc && webpack --config webpack.config.js && webpack --config webpack-srv.config.js"
   },
   "author": "Kael Shipman <kael.shipman@gmail.com>",
   "license": "ISC",
