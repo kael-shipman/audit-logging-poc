@@ -5,8 +5,8 @@ import * as fs from "fs";
 import * as amqp from "amqplib";
 import {
   TimelessChangeEvent,
-  TimelessDataEvent,
-  DataEvent,
+  TimelessDataEventAttributes,
+  DataEventAttributes,
   JsonApiRequestDoc,
   JsonApiResponseDocWithoutErrors,
   JsonApiData,
@@ -106,10 +106,10 @@ const amqpCnx: Promise<amqp.Channel> = amqp.connect({
   return Promise.all(promises).then((results) => ch);
 });
 
-const emit = async function(ev: TimelessDataEvent): Promise<void> {
+const emit = async function(ev: TimelessDataEventAttributes): Promise<void> {
   ev.timestamp = ev.timestamp || Date.now();
   const mq = await amqpCnx;
-  mq.publish("api-stream", "api.data.mutated", Buffer.from(JSON.stringify(ev as DataEvent), "utf8"));
+  mq.publish("api-stream", "api.data.mutated", Buffer.from(JSON.stringify(ev as DataEventAttributes), "utf8"));
 }
 
 const diffData = function<A>(existing: A, incoming: Partial<A>): Partial<A> {
