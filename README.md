@@ -26,6 +26,18 @@ I'd like to make it clear right up front that this was a very quick-and-dirty pr
 2. The general architecture (see below).
 
 
+## Getting Started
+
+If you have bash, just run the `./run.sh` script at repo root. That _should_ work off a fresh clone (just verified this on Linux). That script simply does the following:
+
+1. Runs `npm install` on mono-repo root to get lerna.
+2. Runs `lerna bootstrap --hoist` to set up and connect the sub-packages.
+3. Runs `npm run build` on each sub-package (which in most cases just runs `tsc`)
+4. Starts each service, saving its PID to a variable.
+
+You should be able to bring the whole system up by just running `./run.sh` and then bring the whole system down by hitting `ctrl-c`.
+
+
 ## Architecture
 
 ![system architecture diagram](architecture.png)
@@ -40,6 +52,6 @@ The above diagram demonstrates more or less the main ideas of the system.
 
 In the system in this repo, the "primary API" is listening at 3000, the audit logger service is on 3001, and the front end is on 3002.
 
-[1] Note that this have the API work as a reverse proxy over the audit logging API is not really an intentional design decision so much as a convention I've begun to lean on to solve the problem of having a single authn/authz layer. This diagram doesn't split that out, but in reality the authn/authz layer would probably be a separate service in front of the APIs, and the "main" API and audit logging API would more resemble peers below that, rather than parent/child.
+[1] Note that having the API work as a reverse proxy over the auditor API is not really an intentional design decision so much as a convention I've begun to lean on to solve the problem of having a single authn/authz layer. This diagram doesn't split that out, but in reality the authn/authz layer would probably be a separate service in front of the APIs, and the "primary" API and auditor API would more resemble peers below that than a parent and a child.
 
 
