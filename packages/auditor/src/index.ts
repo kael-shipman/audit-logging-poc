@@ -1,5 +1,6 @@
 import * as amqp from "amqplib";
 import {
+  TimelessChangeEvent,
   DataEventAttributes,
   Db,
   Api,
@@ -17,7 +18,7 @@ const mysql = Mysql.createConnection({
 const query = function<A extends {}>(
   query: string,
   params?: Array<string|number|boolean|null>
-): Promise<Array<A>> {
+): Promise<A> {
   return new Promise((resolve, reject) => {
     mysql.query(query, params, (error, results, fields) => {
       if (error !== null) {
@@ -63,24 +64,31 @@ amqpCnx.then((ch: amqp.Channel) => {
             ev.eventName || null,
           ];
 
-          // Fill in the change-specific parameters
-          if (ev.action === "changed") {
-            params = params.concat([
-              typeof ev.fieldName === "undefined" ? null : ev.fieldName,
-              typeof ev.prevData === "undefined" ? null : ev.prevData,
-              typeof ev.newData === "undefined" ? null : ev.newData,
-            ]);
-          } else {
-            params = params.concat([null,null,null]);
-          }
-
           // Insert row
-          await query(
+          const result = await query<{ insertId: number }>(
             "INSERT INTO `data-events` " +
-            "(`action`, `timestamp`, `actorType`, `actorId`, `targetType`, `targetId`, `eventName`, `fieldName`, `prevData`, `newData`) " +
-            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            "(`action`, `timestamp`, `actorType`, `actorId`, `targetType`, `targetId`, `eventName`) " +
+            "VALUES (?,?,?,?,?,?,?)",
             params
           );
+
+          // Fill in the change-specific parameters
+          if (ev.action === "changed") {
+            const p: Array<Promise<unknown>> = [];
+            for (let k in ev.changes) {
+              p.push(query(
+                "INSERT INTO `data-mutations` (`eventId`, `fieldName`, `prev`, `next`) " +
+                "VALUES (?, ?, ?, ?)",
+                [
+                  result.insertId,
+                  k,
+                  JSON.stringify(ev.changes[k].prev),
+                  JSON.stringify(ev.changes[k].next)
+                ]
+              ));
+            }
+            await Promise.all(p);
+          }
 
           // Ack message
           ch.ack(msg);
@@ -92,6 +100,8 @@ amqpCnx.then((ch: amqp.Channel) => {
     });
   })
 });
+
+const isChangeEvent = (e: any): e is TimelessChangeEvent => e.action === "changed";
 
 
 
@@ -117,20 +127,37 @@ app.options("*", (req, res, next) => {
 
 
 app.get("/api/:targetType/:targetId/data-events", async (req, res, next) => {
-  const events = await query<Db.DataEvent>(
+  const events = await query<Array<Db.DataEvent>>(
     "SELECT * FROM `data-events` WHERE `targetType` = ? && `targetId` = ?",
     [ req.params.targetType, req.params.targetId ]
   );
 
   const result: Array<Api.DataEvent> = [];
   if (events && events.length > 0) {
+    const mutations = await query<Array<{ eventId: number; fieldName: string; prev: string; next: string; }>>(
+      "SELECT * FROM `data-mutations` WHERE `eventId` IN (" + events.map(e => "?").join(",") + ")",
+      events.map(e => e.id)
+    );
+
     for(let i = 0; i < events.length; i++) {
-      const id = events[i].id;
-      delete events[i].id;
+      const event = events[i];
+      const id = event.id;
+      if (isChangeEvent(event)) {
+        event.changes = mutations
+          .filter(v => v.eventId === id)
+          .reduce(
+            (targ, val) => targ[val.fieldName] = {
+              prev: val.prev ? JSON.parse(val.prev) : null,
+              next: val.next ? JSON.parse(val.next) : null,
+            },
+            {} as TimelessChangeEvent["changes"]
+          );
+      }
+      delete event.id;
       result.push({
         id,
         type: "data-events",
-        attributes: events[i],
+        attributes: event,
       });
     }
   }
