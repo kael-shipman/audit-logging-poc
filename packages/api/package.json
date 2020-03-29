@@ -21,6 +21,6 @@
     "@types/jsonwebtoken": "^8.3.2",
     "@types/mysql": "^2.15.6",
     "audit-types": "^1.0.0",
-    "typescript": "^3.5.2"
+    "typescript": "^3.8.3"
   }
 }

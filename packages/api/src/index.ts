@@ -94,7 +94,7 @@ const query = function<A extends {}>(
 const amqpCnx: Promise<amqp.Channel> = amqp.connect({
   hostname: "localhost",
   port: 5672,
-  vhost: "dev",
+  vhost: "/",
   username: "dev",
   password: "dev"
 })

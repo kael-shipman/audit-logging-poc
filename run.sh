@@ -4,44 +4,36 @@ set -e
 
 export PATH="$(npm bin);$PATH"
 
-if [ ! -d "node_modules" ]; then
-  echo "Looks like we're not initialized. Running lerna boostrap --hoist"
-  if ! command -v lerna &>/dev/null; then
-    echo "Can't find lerna. Running npm install first."
-    npm install
-    echo "Ok, now running lerna"
-  fi
-  lerna bootstrap --hoist
+if ! npx --no-install lerna -v &>/dev/null; then
+  echo "Can't find lerna. Running npm install first."
+  npm install
 fi
+echo "Bootstrapping packages"
+npx lerna bootstrap --hoist
 
-if [ ! -f ./packages/audit-types/dist/index.js ]; then
-  (
-    cd ./packages/audit-types
-    npm run build
-  )
-fi
+# Types
+(
+  cd ./packages/audit-types
+  npm run build
+)
+    
+# API
+(
+  cd ./packages/api
+  npm run build
+)
 
+# Auditor
+(
+  cd ./packages/auditor
+  npm run build
+)
 
-if [ ! -f ./packages/api/dist/index.js ]; then
-  (
-    cd ./packages/api
-    npm run build
-  )
-fi
-
-if [ ! -f ./packages/auditor/dist/index.js ]; then
-  (
-    cd ./packages/auditor
-    npm run build
-  )
-fi
-
-if [ ! -f ./packages/website/server.js ]; then
-  (
-    cd ./packages/website
-    npm run build
-  )
-fi
+# Website
+(
+  cd ./packages/website
+  npm run build
+)
 
 d="$PWD"
 
