@@ -2,6 +2,14 @@
 
 set -e
 
+SKIP_BUILD=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --skip-build|-s) SKIP_BUILD=1; shift;;
+    *) >&2 echo "E: Bad argument '$1'"; exit 1;;
+  esac
+done
+
 export PATH="$(npm bin);$PATH"
 
 if ! npx --no-install lerna -v &>/dev/null; then
@@ -11,29 +19,31 @@ fi
 echo "Bootstrapping packages"
 npx lerna bootstrap --hoist
 
-# Types
-(
-  cd ./packages/audit-types
-  npm run build
-)
-    
-# API
-(
-  cd ./packages/api
-  npm run build
-)
+if [ "$SKIP_BUILD" -eq 0 ]; then
+  # Types
+  (
+    cd ./packages/audit-types
+    npm run build
+  )
+      
+  # API
+  (
+    cd ./packages/api
+    npm run build
+  )
 
-# Auditor
-(
-  cd ./packages/auditor
-  npm run build
-)
+  # Auditor
+  (
+    cd ./packages/auditor
+    npm run build
+  )
 
-# Website
-(
-  cd ./packages/website
-  npm run build
-)
+  # Website
+  (
+    cd ./packages/website
+    npm run build
+  )
+fi
 
 d="$PWD"
 
