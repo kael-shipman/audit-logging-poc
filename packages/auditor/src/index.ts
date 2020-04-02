@@ -146,9 +146,12 @@ app.get("/api/:targetType/:targetId/data-events", async (req, res, next) => {
         event.changes = mutations
           .filter(v => v.eventId === id)
           .reduce(
-            (targ, val) => targ[val.fieldName] = {
-              prev: val.prev ? JSON.parse(val.prev) : null,
-              next: val.next ? JSON.parse(val.next) : null,
+            (targ, val) => {
+              targ[val.fieldName] = {
+                prev: val.prev ? JSON.parse(val.prev) : null,
+                next: val.next ? JSON.parse(val.next) : null,
+              };
+              return targ;
             },
             {} as TimelessChangeEvent["changes"]
           );

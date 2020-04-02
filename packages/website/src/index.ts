@@ -430,7 +430,7 @@ const formatDataEvent = function(event: EventsApi.DataEvent): string {
     return `${t.toLocaleString()}: <strong>User ${e.actorId} ${e.action}</strong> the following ` +
       `fields:<ul>` +
       Object.keys(e.changes).map(
-        k => `<li>'${k}' from '${JSON.stringify(e.changes[k].prev)}' to '${JSON.stringify(e.changes[k].next)}'</li>`
+        k => `<li>'${k}' from '${JSON.stringify(e.changes[k].prev)}' to ${JSON.stringify(e.changes[k].next)}</li>`
       ).join("\n") +
       `</ul>`;
   } else {
