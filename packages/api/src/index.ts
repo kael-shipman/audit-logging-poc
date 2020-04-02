@@ -4,7 +4,6 @@ import * as Mysql from "mysql";
 import * as fs from "fs";
 import * as amqp from "amqplib";
 import {
-  TimelessChangeEvent,
   TimelessDataEventAttributes,
   DataEventAttributes,
   JsonApiRequestDoc,
@@ -95,7 +94,7 @@ const query = function<A extends {}>(
 const amqpCnx: Promise<amqp.Channel> = amqp.connect({
   hostname: "localhost",
   port: 5672,
-  vhost: "dev",
+  vhost: "/",
   username: "dev",
   password: "dev"
 })
@@ -112,8 +111,11 @@ const emit = async function(ev: TimelessDataEventAttributes): Promise<void> {
   mq.publish("api-stream", "api.data.mutated", Buffer.from(JSON.stringify(ev as DataEventAttributes), "utf8"));
 }
 
-const diffData = function<A>(existing: A, incoming: Partial<A>): Partial<A> {
-  const diff: Partial<A> = {};
+const diffData = function<A>(
+  existing: A,
+  incoming: Partial<A>
+): { [k: string]: { prev: unknown; next: unknown; } } {
+  const diff: { [k: string]: { prev: unknown; next: unknown; } } = {};
   for(let f in incoming) {
     if (f === "id") {
       continue;
@@ -133,7 +135,10 @@ const diffData = function<A>(existing: A, incoming: Partial<A>): Partial<A> {
         incoming[f] != existing[f]
       )
     ) {
-      diff[f] = incoming[f];
+      diff[f] = {
+        prev: existing[f],
+        next: incoming[f]
+      };
     }
   }
   return diff;
@@ -388,13 +393,15 @@ app.post("/api/users", async (req, res, next) => {
       ]
     );
 
-    emit({
-      action: "created",
+    const common = {
       actorType: "users",
       actorId: req.app.locals.user.id,
       targetType: "users",
       targetId: result.insertId,
-    });
+    };
+
+    emit({ action: "created", ...common });
+    emit({ action: "viewed", ...common });
 
     const doc = {
       data: {
@@ -438,7 +445,6 @@ app.patch("/api/users/:id", async (req, res, next) => {
     // Diff the incoming data against the existing data
     const existingUser = existingUsers[0];
     const diff = diffData<Db.User>(existingUser, userData);
-    const events: Array<TimelessChangeEvent> = [];
     const fields: Array<string> = [];
     const vals: Array<string|number|boolean|null> = [];
 
@@ -446,25 +452,20 @@ app.patch("/api/users/:id", async (req, res, next) => {
     for (let field in diff) {
       const f = <keyof Db.User>field
       fields.push(`\`${f}\` = ?`);
-      vals.push((diff as any)[f]);
-      events.push({
-        action: "changed",
-        actorType: "users",
-        actorId: req.app.locals.user.id,
-        targetType: "users",
-        targetId: req.params.id,
-        fieldName: f,
-        prevData: existingUser[f],
-        newData: diff[f]
-      });
+      vals.push((diff as any)[f].next);
     }
 
     vals.push(req.params.id);
 
+    const common = {
+      actorType: "users",
+      actorId: req.app.locals.user.id,
+      targetType: "users",
+      targetId: req.params.id,
+    };
+
     let finalUserData: Db.User;
     if (fields.length === 0) {
-      // Register view event here and just return the user
-      // TODO: register view event
       finalUserData = existingUser;
     } else {
       await query<{affectedRows: number}>(
@@ -472,10 +473,11 @@ app.patch("/api/users/:id", async (req, res, next) => {
         vals
       );
       finalUserData = <Db.User>Object.assign({}, existingUser, diff);
-      for (let i = 0; i < events.length; i++) {
-        emit(events[i]);
-      }
+      emit({ action: "changed", changes: diff, ...common });
     }
+
+    // Register view event
+    emit({ action: "viewed", ...common });
 
     const doc = {
       data: {

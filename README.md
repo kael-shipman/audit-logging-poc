@@ -28,6 +28,14 @@ I'd like to make it clear right up front that this was a very quick-and-dirty pr
 
 ## Getting Started
 
+*Since this is a proof of concept, many things that should technically be configurable are hard-coded.*
+
+This proof of concept requires the following setup:
+
+* **RabbitMQ running on http://localhost:5672 with virtualhost `/` and user `dev` with password `dev`.**
+* **MySQL running on http://localhost:3306.** (The specific database setups are covered by the `run.sh` script)
+* **NodeJS >= 8.0.0**
+
 If you have bash, just run the `./run.sh` script at repo root. That _should_ work off a fresh clone (just verified this on Linux). That script simply does the following:
 
 1. Runs `npm install` on mono-repo root to get lerna.
@@ -36,6 +44,8 @@ If you have bash, just run the `./run.sh` script at repo root. That _should_ wor
 4. Starts each service, saving its PID to a variable.
 
 You should be able to bring the whole system up by just running `./run.sh` and then bring the whole system down by hitting `ctrl-c`.
+
+Once the services are up, you can access the website at http://localhost:3002. The website accesses two distinct APIs. The api at http://localhost:3000 is the "primary" API, handling the actual data mutation events (GET user, POST user, PATCH user, etc...). Requests to that API generate various events that are picked up by the "auditor" service, accessible via its own API at http://localhost:3001. You can query that API to get information about who did what. Continue to the architecture section below for more details.
 
 
 ## Architecture
@@ -48,7 +58,7 @@ The above diagram demonstrates more or less the main ideas of the system.
 * We have a core application logic layer that authorizes the requests and forwards them to either the data layer or another API[1].
 * We have a user-aware, event emitting data layer.
 * We have a service that catches and logs all data events.
-* That same service, can then be queried for events related to a specific actor or target object.
+* That same service can then be queried for events related to a specific actor or target object.
 
 In the system in this repo, the "primary API" is listening at 3000, the audit logger service is on 3001, and the front end is on 3002.
 

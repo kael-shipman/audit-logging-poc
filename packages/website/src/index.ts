@@ -427,8 +427,12 @@ const formatDataEvent = function(event: EventsApi.DataEvent): string {
   const e = event.attributes;
   const t = new Date(e.timestamp);
   if (e.action === "changed") {
-    return `${t.toLocaleString()}: <strong>User ${e.actorId} ${e.action}</strong> field ` +
-    `${e.fieldName} from '${e.prevData}' to '${e.newData}'`;
+    return `${t.toLocaleString()}: <strong>User ${e.actorId} ${e.action}</strong> the following ` +
+      `fields:<ul>` +
+      Object.keys(e.changes).map(
+        k => `<li>'${k}' from '${JSON.stringify(e.changes[k].prev)}' to ${JSON.stringify(e.changes[k].next)}</li>`
+      ).join("\n") +
+      `</ul>`;
   } else {
     return `${t.toLocaleString()}: <strong>User ${e.actorId} ${e.action}</strong> this user`;
   }

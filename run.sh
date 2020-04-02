@@ -2,41 +2,43 @@
 
 set -e
 
+SKIP_BUILD=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --skip-build|-s) SKIP_BUILD=1; shift;;
+    *) >&2 echo "E: Bad argument '$1'"; exit 1;;
+  esac
+done
+
 export PATH="$(npm bin);$PATH"
 
-if [ ! -d "node_modules" ]; then
-  echo "Looks like we're not initialized. Running lerna boostrap --hoist"
-  if ! command -v lerna &>/dev/null; then
-    echo "Can't find lerna. Running npm install first."
-    npm install
-    echo "Ok, now running lerna"
-  fi
-  lerna bootstrap --hoist
+if ! npx --no-install lerna -v &>/dev/null; then
+  echo "Can't find lerna. Running npm install first."
+  npm install
 fi
+echo "Bootstrapping packages"
+npx lerna bootstrap --hoist
 
-if [ ! -f ./packages/audit-types/dist/index.js ]; then
+if [ "$SKIP_BUILD" -eq 0 ]; then
+  # Types
   (
     cd ./packages/audit-types
     npm run build
   )
-fi
-
-
-if [ ! -f ./packages/api/dist/index.js ]; then
+      
+  # API
   (
     cd ./packages/api
     npm run build
   )
-fi
 
-if [ ! -f ./packages/auditor/dist/index.js ]; then
+  # Auditor
   (
     cd ./packages/auditor
     npm run build
   )
-fi
 
-if [ ! -f ./packages/website/server.js ]; then
+  # Website
   (
     cd ./packages/website
     npm run build

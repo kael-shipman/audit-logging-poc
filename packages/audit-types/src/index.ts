@@ -67,9 +67,12 @@ export interface TimelessChangeEvent {
   actorId: number|string;
   targetType: string;
   targetId: number|string;
-  fieldName: string;
-  prevData: any;
-  newData: any;
+  changes: {
+    [fieldName: string]: {
+      prev: any | null;
+      next: any | null;
+    }
+  }
   eventName?: string; // A standard name for the event that can be used to map localized strings to describe the event
 }
 
